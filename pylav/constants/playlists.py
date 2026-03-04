@@ -14,8 +14,8 @@ __all__ = (
 
 
 BUNDLED_PYLAV_PLAYLISTS_IDS = {1, 2}
-BUNDLED_SPOTIFY_PLAYLIST_IDS = {1000001, 1000002, 1000003, 1000004}
-BUNDLED_DEEZER_PLAYLIST_IDS = set(range(2000001, 2000074))
+BUNDLED_SPOTIFY_PLAYLIST_IDS: set = set()  # Disabled: Spotify playlists are broken (no Spotify node support)
+BUNDLED_DEEZER_PLAYLIST_IDS: set = set()  # Disabled: reduces startup noise and unnecessary update spam
 
 BUNDLED_PLAYLIST_IDS = BUNDLED_PYLAV_PLAYLISTS_IDS | BUNDLED_SPOTIFY_PLAYLIST_IDS | BUNDLED_DEEZER_PLAYLIST_IDS
 
