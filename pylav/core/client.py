@@ -1605,6 +1605,9 @@ class Client(metaclass=SingletonClass):
                 response = await self.search_query(
                     subquery, bypass_cache=bypass_cache, fullsearch=fullsearch, region=region, sleep=sleep
                 )
+                if response is None:
+                    LOGGER.warning("search_query returned None for query: %s (no capable node available)", subquery)
+                    continue
                 match response.loadType:
                     case "track":
                         tracks = [response.data]
