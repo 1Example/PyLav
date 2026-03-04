@@ -250,6 +250,11 @@ class Player(VoiceProtocol):
         self._last_track_stuck_position = -1
         self._waiting_for_node = asyncio.Event()
 
+        # SponsorBlock categories are configured per Lavalink session/player.
+        # Track the last session id we applied categories for, to avoid
+        # re-sending the same config on every voice update.
+        self._sponsorblock_applied_session_id: str | None = None
+
     def __hash__(self):
         return hash((self.channel.guild.id, self.channel_id))
 
@@ -269,7 +274,10 @@ class Player(VoiceProtocol):
         if not payload:
             payload = {}
         if {"sessionId", "token", "endpoint"} == self._voice_state.keys():
-            payload["voice"] = self._voice_state
+            voice = dict(self._voice_state)
+            if self.channel_id is not None:
+                voice["channelId"] = str(self.channel_id)
+            payload["voice"] = voice
         return payload
 
     async def post_init(
@@ -1076,9 +1084,24 @@ class Player(VoiceProtocol):
                 or existing_session.voice.token != self._voice_state["token"]
                 or existing_session.voice.endpoint != self._voice_state["endpoint"]
             ):
-                await self.node.patch_session_player(self.guild.id, payload={"voice": self._voice_state})
+                voice = dict(self._voice_state)
+                if self.channel_id is not None:
+                    voice["channelId"] = str(self.channel_id)
+                await self.node.patch_session_player(self.guild.id, payload={"voice": voice})
             self._waiting_for_node.set()
             self._hashed_voice_state = hash(tuple(self._voice_state.items()))
+
+            # Ensure SponsorBlock is enabled with the default (all) categories.
+            # Historically this was only applied when switching nodes/sessions.
+            # With external nodes, players may start on the correct node from
+            # the beginning, so apply categories on first connect as well.
+            if (
+                self.node.supports_sponsorblock
+                and self.node.session_id
+                and self._sponsorblock_applied_session_id != self.node.session_id
+            ):
+                await self.add_sponsorblock_categories()
+                self._sponsorblock_applied_session_id = self.node.session_id
 
     async def _query_to_track(
         self,
