@@ -10,7 +10,7 @@
  - [Click Here](SETUP.md)
 ---------------------------
 ### Requirements
-- PostgresSQL 14 server
+- PostgresSQL 18 server
   - MacOS: [PostgresSQL](https://www.postgresql.org/download/macosx/)
   - Windows: [PostgresSQL](https://www.postgresql.org/download/windows/)
   - Linux: [PostgresSQL](https://www.postgresql.org/download/linux/)
@@ -20,7 +20,7 @@
 ---------------------------
 ## Supported sources
 ### [Built-in](https://github.com/lavalink-devs/Lavalink):
-  - youtube (Deprecated with LL 4.0.5)
+  - youtube
   - soundcloud
   - bandcamp
   - twitch
