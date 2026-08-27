@@ -1317,6 +1317,10 @@ class Node:
         async with self._manager._client.cached_session.get(
             self.get_endpoint_decodetrack(),
             params={"encodedTrack": encoded_track, "trace": "true" if self.trace else "false"},
+            # The cached session is shared across the client and carries no
+            # credentials, so the node's own headers have to come along or
+            # Lavalink logs "Authorization missing" and refuses the request.
+            headers=self._session.headers,
             timeout=timeout,
         ) as res:
             if res.status in GOOD_RESPONSE_RANGE:
@@ -1339,6 +1343,7 @@ class Node:
             self.get_endpoint_decodetracks(),
             json=encoded_tracks,
             params={"trace": "true" if self.trace else "false"},
+            headers=self._session.headers,
         ) as res:
             if res.status in GOOD_RESPONSE_RANGE:
                 return [from_dict(data_class=Track, data=t) for t in await res.json(loads=json.loads)]
