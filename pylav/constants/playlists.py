@@ -10,37 +10,35 @@ __all__ = (
     "BUNDLED_DEEZER_PLAYLIST",
     "BUNDLED_EXTERNAL_PLAYLISTS",
     "BUNDLED_PLAYLISTS",
+    "RETIRED_BUNDLED_PLAYLIST_IDS",
 )
 
 
-BUNDLED_PYLAV_PLAYLISTS_IDS = {1, 2}
+# No playlists ship with the bot. What used to be here - Aikaterna's curated
+# tracks and Anime OPs/EDs - appeared in every server whether anyone wanted
+# them or not, and were re-downloaded on a timer. Servers make their own.
+BUNDLED_PYLAV_PLAYLISTS_IDS: set = set()
+
+_RETIRED_PYLAV_PLAYLIST_IDS = {1, 2}
 BUNDLED_SPOTIFY_PLAYLIST_IDS: set = set()  # Disabled: Spotify playlists are broken (no Spotify node support)
 BUNDLED_DEEZER_PLAYLIST_IDS: set = set()  # Disabled: reduces startup noise and unnecessary update spam
 
 BUNDLED_PLAYLIST_IDS = BUNDLED_PYLAV_PLAYLISTS_IDS | BUNDLED_SPOTIFY_PLAYLIST_IDS | BUNDLED_DEEZER_PLAYLIST_IDS
 
 # noinspection SpellCheckingInspection
-BUNDLED_PYLAV_PLAYLISTS = {
-    1: (
-        "Aikaterna's curated tracks",
-        "https://gist.githubusercontent.com/Drapersniper/cbe10d7053c844f8c69637bb4fd9c5c3/raw/playlist.pylav",
-        "YT",
-    ),
-    2: (
-        "Anime OPs/EDs",
-        "https://gist.githubusercontent.com/Drapersniper/2ad7c4cdd4519d9707f1a65d685fb95f/raw/anime_pl.pylav",
-        "YT",
-    ),
-}
+# Empty on purpose - see BUNDLED_PYLAV_PLAYLISTS_IDS above. Note that
+# update_bundled_playlists falls back to this whole mapping when its filter
+# comes out empty, so emptying the id set alone would not have stopped them.
+BUNDLED_PYLAV_PLAYLISTS: dict = {}
 # noinspection SpellCheckingInspection
-BUNDLED_SPOTIFY_PLAYLIST = {
+_RETIRED_SPOTIFY_PLAYLIST = {
     1000001: ("2seaovjQuA2cMgltyLQUtd", "CYBER//", "playlist"),  # Predä
     1000002: ("0rSd8LoXBD5tEBbSsbXqbc", "PHONK//", "playlist"),  # Predä
     1000003: ("21trhbHm5hVgosPS1YpwSM", "bangers", "playlist"),  # Predä
     1000004: ("0BbMjMQZ43vtdz7al266XH", "???", "playlist"),
 }
 
-BUNDLED_DEEZER_PLAYLIST = {
+_RETIRED_DEEZER_PLAYLIST = {
     2000001: ("3155776842", "Top Worldwide", "playlist"),
     2000002: ("1652248171", "Top Canada", "playlist"),
     2000003: ("1362528775", "Top South Africa", "playlist"),
@@ -115,6 +113,19 @@ BUNDLED_DEEZER_PLAYLIST = {
     2000072: ("5206929684", "Japan Anime Hits", "playlist"),
     2000073: ("15467484", "The Elder Scrolls V: Skyrim: Original Game Soundtrack", "album"),
 }
+
+# Empty for the same reason as the PyLav ones. Emptying only the id sets was
+# not enough: update_bundled_external_playlists falls back to the whole mapping
+# when its filter comes out empty, so every one of these was still being
+# created on a timer.
+BUNDLED_SPOTIFY_PLAYLIST: dict = {}
+BUNDLED_DEEZER_PLAYLIST: dict = {}
+
+# Everything that ever shipped, so the rows left behind can be found and
+# deleted. Nothing here is created any more.
+RETIRED_BUNDLED_PLAYLIST_IDS = (
+    _RETIRED_PYLAV_PLAYLIST_IDS | set(_RETIRED_SPOTIFY_PLAYLIST) | set(_RETIRED_DEEZER_PLAYLIST)
+)
 
 BUNDLED_EXTERNAL_PLAYLISTS = BUNDLED_SPOTIFY_PLAYLIST | BUNDLED_DEEZER_PLAYLIST
 BUNDLED_PLAYLISTS = BUNDLED_PYLAV_PLAYLISTS | BUNDLED_EXTERNAL_PLAYLISTS

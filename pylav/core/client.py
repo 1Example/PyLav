@@ -56,7 +56,12 @@ from pylav.constants.config import (
     TASK_TIMER_UPDATE_EXTERNAL_PLAYLISTS_DAYS,
     overrides,
 )
-from pylav.constants.playlists import BUNDLED_DEEZER_PLAYLIST_IDS, BUNDLED_PLAYLIST_IDS, BUNDLED_SPOTIFY_PLAYLIST_IDS
+from pylav.constants.playlists import (
+    BUNDLED_DEEZER_PLAYLIST_IDS,
+    BUNDLED_PLAYLIST_IDS,
+    BUNDLED_SPOTIFY_PLAYLIST_IDS,
+    RETIRED_BUNDLED_PLAYLIST_IDS,
+)
 from pylav.constants.specials import PYLAV_SERVER_ID
 from pylav.core.bot_overrides import get_context, process_commands
 from pylav.core.context import PyLavContext
@@ -543,6 +548,7 @@ class Client(metaclass=SingletonClass):
         await self._maybe_update_next_execution_bundled_playlist(time_now)
         await self._maybe_update_next_execution_bundled_external_playlists(time_now)
         await self._maybe_update_next_execution_external_playlists(time_now)
+        await self._drop_retired_bundled_playlists()
         await self._maybe_force_update_bundled_playlists()
         await self._add_scheduler_job_cache_cleanup()
         await self._add_scheduler_job_bundled_playlist()
@@ -557,6 +563,21 @@ class Client(metaclass=SingletonClass):
             await self._local_node_manager.start(java_path=java_path)
         else:
             self._local_node_manager.ready.set()
+
+    async def _drop_retired_bundled_playlists(self) -> None:
+        """Delete playlists that used to ship with the bot.
+
+        Emptying the constants stops them being re-created, but the rows put
+        there by earlier versions stay until something removes them - and
+        nothing maintains them any more.
+        """
+        for playlist_id in RETIRED_BUNDLED_PLAYLIST_IDS:
+            with contextlib.suppress(Exception):
+                playlist = self.playlist_db_manager.get_playlist(identifier=playlist_id)
+                if await playlist.exists():
+                    name = await playlist.fetch_name()
+                    await playlist.delete()
+                    LOGGER.info("Removed the bundled playlist %r; it no longer ships", name)
 
     async def _maybe_force_update_bundled_playlists(self) -> None:
         total_bundled_playlists = len(BUNDLED_PLAYLIST_IDS)

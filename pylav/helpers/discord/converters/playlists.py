@@ -56,17 +56,42 @@ else:
         @classmethod
         async def autocomplete(cls, interaction: DISCORD_INTERACTION_TYPE, current: str) -> list[Choice]:
             """Autocompletes a playlist name or ID to a list of matching objects"""
+            manager = interaction.client.pylav.playlist_db_manager
             if not current:
-                playlists = await interaction.client.pylav.playlist_db_manager.get_bundled_playlists()
-                return [
-                    Choice(name=shorten_string(await e.fetch_name(), max_length=100), value=f"{e.id}")
-                    for e in playlists
-                ][:25]
+                # This listed only the bundled playlists, so opening the box
+                # offered whatever shipped with the bot and never the server's
+                # own - which is the one thing anyone is looking for. Now it
+                # offers what this person can actually play, server first.
+                try:
+                    bundled, user_pl, guild_pl, channel_pl, vc_pl = await manager.get_all_for_user(
+                        requester=interaction.user.id, guild=interaction.guild
+                    )
+                except Exception:  # noqa: BLE001
+                    return []
+                seen: set = set()
+                choices = []
+                for group in (guild_pl, user_pl, channel_pl, vc_pl, bundled):
+                    for playlist in group or []:
+                        if playlist.id in seen:
+                            continue
+                        seen.add(playlist.id)
+                        choices.append(
+                            Choice(
+                                name=shorten_string(await playlist.fetch_name(), max_length=100),
+                                value=f"{playlist.id}",
+                            )
+                        )
+                        if len(choices) == 25:
+                            return choices
+                return choices
 
             try:
-                playlists = await interaction.client.pylav.playlist_db_manager.get_playlist_by_name(current, limit=50)
+                playlists = await manager.get_playlist_by_name(current, limit=50)
             except EntryNotFoundException:
                 return []
+            # The same playlist can come back more than once, which is why a
+            # single match could show up twice in the list.
+            playlists = list({playlist.id: playlist for playlist in playlists}.values())
 
             async def _filter(c: PlaylistModel):
                 name = await c.fetch_name()
