@@ -310,6 +310,22 @@ class PlayerController:
             await self.client.player_state_db_manager.delete_player(guild_id=player_state.id)
             return
         requester = self.client.bot.user
+        # Discord can still hold the voice session from before the restart. Ask
+        # to join the channel it already believes we are in and it sends no
+        # VOICE_SERVER_UPDATE at all - and since Player.connect() only fires the
+        # gateway op and returns, the restore then sits in change_node waiting
+        # for an update that is never coming, until the timeout below kills it.
+        # Leaving first forces a fresh handshake. Player.reconnect() bounces the
+        # voice state the same way, for the same reason.
+        if channel.guild.me in getattr(channel, "members", ()):
+            LOGGER.debug(
+                "Discord still has us in voice for %s; leaving first so the "
+                "handshake starts clean",
+                player_state.id,
+            )
+            with contextlib.suppress(Exception):
+                await channel.guild.change_voice_state(channel=None)
+                await asyncio.sleep(0.5)
         try:
             async with asyncio.timeout(10):
                 discord_player = await self.create(
@@ -318,6 +334,18 @@ class PlayerController:
                     feature=(await Query.from_base64(player_state.current["encoded"], lazy=True)).requires_capability,
                     self_deaf=player_state.self_deaf,
                 )
+        except TimeoutError:
+            # Almost always Discord not answering the voice handshake in time.
+            # The saved state is deliberately left alone - the next restart
+            # tries again rather than silently losing the queue.
+            LOGGER.warning(
+                "Gave up restoring the player in %s after 10s waiting for Discord to "
+                "confirm the voice connection to %s. The queue is kept and will be "
+                "restored on the next start.",
+                player_state.id,
+                player_state.channel_id,
+            )
+            raise
         except Exception:
             LOGGER.exception("Failed to restore player %s - %s", player_state.id, player_state.channel_id)
             raise
