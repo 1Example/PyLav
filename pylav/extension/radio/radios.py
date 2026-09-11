@@ -57,6 +57,13 @@ class Request:
         resp.raise_for_status()
 
 
+# Radio Browser caps a listing at 1000 rows unless asked otherwise. It did not
+# always, and "list all stations" quietly became "the 1000 most voted" - 47
+# countries out of 241, with all 964 Romanian stations among those that fell
+# off. Anything documented as listing everything asks for everything.
+LIST_EVERYTHING = 1_000_000
+
+
 class RadioBrowser:
     """This class implements the main interface for the Radio Browser API."""
 
@@ -67,6 +74,29 @@ class RadioBrowser:
             headers=headers, cached_session=self._client.cached_session, session=self._client.session
         )
         self._disabled = False
+        self._exact_names: dict[str, dict[str, str]] = {}
+
+    async def _api_spelling(self, kind: str, value: str) -> str:
+        """The directory's own spelling of a country or language name.
+
+        Both are matched exactly and case-sensitively, and the two use
+        opposite conventions: the directory holds "Romania" but "romanian",
+        so searching for "romania" or for "Romanian" returns nothing at all
+        rather than a near miss.
+
+        The casing cannot be derived either - .title() turns the real country
+        "US Virgin Islands" into "Us Virgin Islands" - so what was typed is
+        mapped onto what the directory actually has, and left alone when it
+        matches nothing.
+        """
+        table = self._exact_names.get(kind)
+        if not table:
+            rows = await (self.countries() if kind == "country" else self.languages())
+            table = {row.name.casefold(): row.name for row in rows if row.name}
+            if not table:
+                return value
+            self._exact_names[kind] = table
+        return table.get(value.casefold(), value)
 
     async def initialize(self) -> None:
         try:
@@ -186,7 +216,7 @@ class RadioBrowser:
         url = await self.base_url / "json" / "states"
         if self._disabled:
             return []
-        response = await self.request.get(url, hidebroken="true")
+        response = await self.request.get(url, hidebroken="true", limit=LIST_EVERYTHING)
 
         if country:
             if state:
@@ -241,7 +271,7 @@ class RadioBrowser:
             url /= tag.lower()
         if self._disabled:
             return []
-        response = await self.request.get(url, hidebroken="true")
+        response = await self.request.get(url, hidebroken="true", limit=LIST_EVERYTHING)
         return [build(Tag, tag) for tag in response]
 
     async def station_by_uuid(self, stationuuid: str) -> list[Station]:
@@ -442,6 +472,7 @@ class RadioBrowser:
         if self._disabled:
             return []
         kwargs["hidebroken"] = kwargs.pop("hidebroken", "true")
+        kwargs.setdefault("limit", LIST_EVERYTHING)
         return [
             build(Station, station, radio_api_client=self)
             async for station in AsyncIter(await self.request.get(url, **kwargs), steps=250)
@@ -543,6 +574,10 @@ class RadioBrowser:
         for paramkey in ["tag", "tagList"]:
             if paramkey in kwargs:
                 kwargs[paramkey] = kwargs[paramkey].lower()
+        # Country and language are case-sensitive too, in opposite directions.
+        for paramkey in ("country", "language"):
+            if value := kwargs.get(paramkey):
+                kwargs[paramkey] = await self._api_spelling(paramkey, str(value))
         kwargs["hidebroken"] = kwargs.pop("hidebroken", "true")
         if kwargs["hidebroken"] is False:
             kwargs["hidebroken"] = "false"
