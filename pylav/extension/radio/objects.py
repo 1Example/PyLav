@@ -1,15 +1,43 @@
 from __future__ import annotations
 
 import datetime
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, fields
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from iso8601 import iso8601
 
+from pylav.logging import getLogger
 from pylav.players.query.obj import Query
 
 if TYPE_CHECKING:
     from pylav.extension.radio.radios import RadioBrowser
+
+LOGGER = getLogger("PyLav.extension.RadioBrowser")
+
+T = TypeVar("T")
+_WARNED: set[str] = set()
+
+
+def build(cls: type[T], payload: dict[str, Any], **extra: Any) -> T:
+    """Build one object from an API payload, ignoring fields we do not know.
+
+    Radio Browser adds fields to its responses without warning, and these are
+    plain dataclasses: passing one an unexpected keyword is a TypeError. That
+    is how `geo_distance` appearing on stations took the whole extension down -
+    every station fetch raised, and initialize() caught it, logged one vague
+    line and switched the extension off for the session.
+
+    An unknown field is not a reason to lose radio. It is logged once per
+    field so it can be added deliberately, and dropped.
+    """
+    known = {f.name for f in fields(cls)}
+    if unknown := payload.keys() - known:
+        for name in sorted(unknown):
+            key = f"{cls.__name__}.{name}"
+            if key not in _WARNED:
+                _WARNED.add(key)
+                LOGGER.debug("%s sends %r, which PyLav does not use", cls.__name__, name)
+    return cls(**extra, **{k: v for k, v in payload.items() if k in known})
 
 
 @dataclass(eq=True, slots=True, unsafe_hash=True, order=True, kw_only=True)
@@ -52,6 +80,7 @@ class Station:
     ssl_error: int | None = None
     geo_lat: float | None = None
     geo_long: float | None = None
+    geo_distance: float | None = None
     has_extended_info: int | None = None
 
     def __post_init__(self):

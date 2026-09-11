@@ -9,7 +9,16 @@ from yarl import URL
 
 from pylav.compat import json
 from pylav.extension.radio.base_url import pick_base_url
-from pylav.extension.radio.objects import Codec, Country, CountryCode, Language, State, Station, Tag
+from pylav.extension.radio.objects import (
+    Codec,
+    Country,
+    CountryCode,
+    Language,
+    State,
+    Station,
+    Tag,
+    build,
+)
 from pylav.extension.radio.utils import TransformerCache, type_check
 from pylav.logging import getLogger
 from pylav.type_hints.dict_typing import JSON_DICT_TYPE
@@ -63,7 +72,10 @@ class RadioBrowser:
         try:
             self._disabled = not await self.base_url
             if self._disabled:
-                LOGGER.error("Error while initializing the Radio Browser extension - disabling it")
+                LOGGER.warning(
+                    "No Radio Browser server would answer, so radio is off for now. "
+                    "This is their service being unreachable, not a problem with the bot."
+                )
                 return
             LOGGER.debug("Priming radio cache")
             await TransformerCache.fill_cache(self._client)
@@ -72,8 +84,15 @@ class RadioBrowser:
             TransformerCache.fill_choice_cache()
             LOGGER.debug("Radio cache primed")
         except Exception as e:
-            LOGGER.error("Error while initializing the Radio Browser extension - disabling it")
-            LOGGER.debug(e, exc_info=e)
+            # This used to log the same sentence as the branch above and put
+            # the reason at DEBUG, so a dead server and a parsing bug looked
+            # identical and neither said what happened.
+            LOGGER.error(
+                "Could not prime the Radio Browser cache, so radio is off for now: %s: %s",
+                type(e).__name__,
+                e,
+                exc_info=e,
+            )
             self._disabled = True
 
     @property
@@ -107,7 +126,7 @@ class RadioBrowser:
             url /= code
         if self._disabled:
             return []
-        return [Country(**country) for country in await self.request.get(url, hidebroken="true")]
+        return [build(Country, country) for country in await self.request.get(url, hidebroken="true")]
 
     @type_check
     async def countrycodes(self, code: str | None = None) -> list[CountryCode]:
@@ -127,7 +146,7 @@ class RadioBrowser:
             url /= code
         if self._disabled:
             return []
-        return [CountryCode(**country) for country in await self.request.get(url, hidebroken="true")]
+        return [build(CountryCode, country) for country in await self.request.get(url, hidebroken="true")]
 
     @type_check
     async def codecs(self, codec: str | None = None) -> list[Codec]:
@@ -147,8 +166,8 @@ class RadioBrowser:
             return []
         response = await self.request.get(url, hidebroken="true")
         if codec:
-            return [Codec(**tag) for tag in filter(lambda s: s["name"].lower() == codec.lower(), response)]
-        return [Codec(**tag) for tag in response]
+            return [build(Codec, tag) for tag in filter(lambda s: s["name"].lower() == codec.lower(), response)]
+        return [build(Codec, tag) for tag in response]
 
     @type_check
     async def states(self, country: str | None = None, state: str | None = None) -> list[State]:
@@ -172,16 +191,16 @@ class RadioBrowser:
         if country:
             if state:
                 return [
-                    State(**state)
+                    build(State, state)
                     for state in filter(
                         lambda s: s["country"].lower() == country.lower() and s["name"].lower() == state.lower(),
                         response,
                     )
                 ]
-            return [State(**state) for state in filter(lambda s: s["country"].lower() == country.lower(), response)]
+            return [build(State, state) for state in filter(lambda s: s["country"].lower() == country.lower(), response)]
         if state:
-            return [State(**state) for state in filter(lambda s: s["name"].lower() == state.lower(), response)]
-        return [State(**state) for state in response]
+            return [build(State, state) for state in filter(lambda s: s["name"].lower() == state.lower(), response)]
+        return [build(State, state) for state in response]
 
     @type_check
     async def languages(self, language: str | None = None) -> list[Language]:
@@ -202,7 +221,7 @@ class RadioBrowser:
         if self._disabled:
             return []
         response = await self.request.get(url, hidebroken="true")
-        return [Language(**language) for language in response]
+        return [build(Language, language) for language in response]
 
     @type_check
     async def tags(self, tag: str | None = None) -> list[Tag]:
@@ -223,7 +242,7 @@ class RadioBrowser:
         if self._disabled:
             return []
         response = await self.request.get(url, hidebroken="true")
-        return [Tag(**tag) for tag in response]
+        return [build(Tag, tag) for tag in response]
 
     async def station_by_uuid(self, stationuuid: str) -> list[Station]:
         """Radio station by stationuuid.
@@ -241,7 +260,7 @@ class RadioBrowser:
         if self._disabled:
             return []
         response = await self.request.get(url, hidebroken="true")
-        return [Station(radio_api_client=self, **station) async for station in AsyncIter(response, steps=250)]
+        return [build(Station, station, radio_api_client=self) async for station in AsyncIter(response, steps=250)]
 
     async def stations_by_name(
         self, name: str, exact: bool = False, **kwargs: str | int | bool | None
@@ -424,7 +443,7 @@ class RadioBrowser:
             return []
         kwargs["hidebroken"] = kwargs.pop("hidebroken", "true")
         return [
-            Station(radio_api_client=self, **station)
+            build(Station, station, radio_api_client=self)
             async for station in AsyncIter(await self.request.get(url, **kwargs), steps=250)
         ]
 
@@ -445,7 +464,7 @@ class RadioBrowser:
             return []
         kwargs["hidebroken"] = kwargs.pop("hidebroken", "true")
         response = await self.request.get(url, **kwargs)
-        return [Station(radio_api_client=self, **station) async for station in AsyncIter(response, steps=250)]
+        return [build(Station, station, radio_api_client=self) async for station in AsyncIter(response, steps=250)]
 
     async def stations_by_clicks(self, limit: int, **kwargs: str | int | bool | None) -> list[Station]:
         """A list of the stations that are clicked the most.
@@ -464,7 +483,7 @@ class RadioBrowser:
             return []
         kwargs["hidebroken"] = kwargs.pop("hidebroken", "true")
         response = await self.request.get(url, **kwargs)
-        return [Station(radio_api_client=self, **station) async for station in AsyncIter(response, steps=250)]
+        return [build(Station, station, radio_api_client=self) async for station in AsyncIter(response, steps=250)]
 
     @type_check
     async def search(self, **kwargs: str | int | bool | None) -> list[Station]:
@@ -528,7 +547,7 @@ class RadioBrowser:
         if kwargs["hidebroken"] is False:
             kwargs["hidebroken"] = "false"
         return [
-            Station(radio_api_client=self, **station)
+            build(Station, station, radio_api_client=self)
             async for station in AsyncIter(await self.request.get(url, **kwargs), steps=250)
         ]
 
