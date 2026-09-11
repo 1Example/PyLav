@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from typing import TYPE_CHECKING, Any
 
@@ -83,6 +84,7 @@ class RadioBrowser:
         )
         self._disabled = False
         self._exact_names: dict[str, dict[str, str]] = {}
+        self._priming: asyncio.Task | None = None
 
     async def _api_spelling(self, kind: str, value: str) -> str:
         """The directory's own spelling of a country or language name.
@@ -119,6 +121,27 @@ class RadioBrowser:
                 "This is their service being unreachable, not a problem with the bot."
             )
             return
+        # Primed in the background. This is megabytes over the network for a
+        # cache that only feeds an autocomplete, and it runs before the nodes
+        # connect and the players are restored - so every second it takes is a
+        # second everything else on startup waits. Nothing needs it to have
+        # finished: an autocomplete with an empty cache offers nothing yet, and
+        # searching asks the directory directly.
+        self._priming = asyncio.create_task(self._prime_cache())
+
+    async def close(self) -> None:
+        """Stop priming, if it is still going when the bot is shutting down.
+
+        A task still running when the loop closes is reported as destroyed
+        while pending, which is alarming to read and means nothing.
+        """
+        if self._priming is not None and not self._priming.done():
+            self._priming.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._priming
+
+    async def _prime_cache(self) -> None:
+        """Fill the autocomplete cache, out of the way of startup."""
         try:
             LOGGER.debug("Priming radio cache")
             await TransformerCache.fill_cache(self._client)
@@ -126,11 +149,11 @@ class RadioBrowser:
             await self.stations_by_votes(limit=25)
             TransformerCache.fill_choice_cache()
             LOGGER.debug("Radio cache primed")
+        except asyncio.CancelledError:
+            raise
         except Exception as e:  # noqa: BLE001
-            # The cache only feeds the autocomplete. Searching asks the
-            # directory directly and needs none of it, so a bad response here
-            # is not a reason to switch radio off until the next restart -
-            # which is what a single 502 used to do.
+            # A bad response here is not a reason to switch radio off until the
+            # next restart, which is what a single 502 used to do.
             LOGGER.warning(
                 "Could not prime the Radio Browser cache (%s: %s). Radio still works; "
                 "station suggestions will be thin until this succeeds.",

@@ -1078,6 +1078,7 @@ class Client(metaclass=SingletonClass):
                         SingletonCallable.reset()
                         self._initiated = False
                         await self.__local_tracks_cache.shutdown()
+                        await self._radio_manager.close()
                         await self.player_manager.save_all_players()
                         await self.player_manager.shutdown()
                         await self._node_manager.close()
