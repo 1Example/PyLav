@@ -63,6 +63,14 @@ class Request:
 # off. Anything documented as listing everything asks for everything.
 LIST_EVERYTHING = 1_000_000
 
+# Stations are the exception: there are 58000 of them and the directory will
+# not serve them in one go any more. Measured against it, 10000 rows is 11 MB
+# in about a second and covers 199 countries; 25000 is 27.6 MB and three and a
+# half seconds; 100000 is a 502. This listing exists to populate an
+# autocomplete that shows 25 rows at a time, so it is ordered by votes and
+# stops well short of the edge - anything not in it is still one search away.
+STATION_LIST_LIMIT = 10_000
+
 
 class RadioBrowser:
     """This class implements the main interface for the Radio Browser API."""
@@ -101,29 +109,34 @@ class RadioBrowser:
     async def initialize(self) -> None:
         try:
             self._disabled = not await self.base_url
-            if self._disabled:
-                LOGGER.warning(
-                    "No Radio Browser server would answer, so radio is off for now. "
-                    "This is their service being unreachable, not a problem with the bot."
-                )
-                return
+        except Exception as e:  # noqa: BLE001
+            LOGGER.warning("Could not reach the Radio Browser directory: %s: %s", type(e).__name__, e)
+            self._disabled = True
+            return
+        if self._disabled:
+            LOGGER.warning(
+                "No Radio Browser server would answer, so radio is off for now. "
+                "This is their service being unreachable, not a problem with the bot."
+            )
+            return
+        try:
             LOGGER.debug("Priming radio cache")
             await TransformerCache.fill_cache(self._client)
             await self.stations_by_clicks(limit=25)
             await self.stations_by_votes(limit=25)
             TransformerCache.fill_choice_cache()
             LOGGER.debug("Radio cache primed")
-        except Exception as e:
-            # This used to log the same sentence as the branch above and put
-            # the reason at DEBUG, so a dead server and a parsing bug looked
-            # identical and neither said what happened.
-            LOGGER.error(
-                "Could not prime the Radio Browser cache, so radio is off for now: %s: %s",
+        except Exception as e:  # noqa: BLE001
+            # The cache only feeds the autocomplete. Searching asks the
+            # directory directly and needs none of it, so a bad response here
+            # is not a reason to switch radio off until the next restart -
+            # which is what a single 502 used to do.
+            LOGGER.warning(
+                "Could not prime the Radio Browser cache (%s: %s). Radio still works; "
+                "station suggestions will be thin until this succeeds.",
                 type(e).__name__,
                 e,
-                exc_info=e,
             )
-            self._disabled = True
 
     @property
     async def base_url(self) -> URL:
@@ -472,7 +485,9 @@ class RadioBrowser:
         if self._disabled:
             return []
         kwargs["hidebroken"] = kwargs.pop("hidebroken", "true")
-        kwargs.setdefault("limit", LIST_EVERYTHING)
+        kwargs.setdefault("limit", STATION_LIST_LIMIT)
+        kwargs.setdefault("order", "votes")
+        kwargs.setdefault("reverse", "true")
         return [
             build(Station, station, radio_api_client=self)
             async for station in AsyncIter(await self.request.get(url, **kwargs), steps=250)
