@@ -243,25 +243,20 @@ class PlayerController:
         forced_channel_id = await player_config.fetch_forced_channel_id()
         self_deafen = await self.client.player_config_manager.get_self_deaf(channel.guild.id)
         if forced_channel_id != 0:
+            # The forced voice channel may have been deleted, moved, or simply
+            # fallen out of the guild cache. Never call ``connect`` on None.
             act_channel = channel.guild.get_channel_or_thread(forced_channel_id)
 
-            # A forced voice channel can become stale when the channel is deleted,
-            # recreated, or is simply not present in the bot's channel cache.
-            # Previously this resulted in ``None.connect(...)`` and made the normal
-            # ``player connect`` command fail even though the requested channel was
-            # perfectly valid. Try fetching the configured channel once, then fall
-            # back to the channel the user actually requested and clear the stale
-            # forced-channel setting.
             if act_channel is None:
-                with contextlib.suppress(discord.HTTPException, discord.NotFound, discord.Forbidden):
+                try:
                     act_channel = await channel.guild.fetch_channel(forced_channel_id)
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    act_channel = None
 
-            if act_channel is None or not isinstance(
-                act_channel, (discord.VoiceChannel, discord.StageChannel)
-            ):
+            if not isinstance(act_channel, (discord.VoiceChannel, discord.StageChannel)):
                 LOGGER.warning(
-                    "Forced voice channel %s for guild %s is unavailable or invalid; "
-                    "falling back to requested channel %s.",
+                    "Configured forced voice channel %s for guild %s is missing or invalid; "
+                    "falling back to the requested voice channel %s.",
                     forced_channel_id,
                     channel.guild.id,
                     channel.id,
@@ -270,6 +265,7 @@ class PlayerController:
                 act_channel = channel
         else:
             act_channel = channel
+
         player: Player = await act_channel.connect(
             cls=Player, self_deaf=self_deafen if self_deaf is None else self_deaf  # type: ignore
         )
