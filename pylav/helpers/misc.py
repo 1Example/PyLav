@@ -155,9 +155,19 @@ class TimedFeature:
         return {"enabled": self.enabled, "time": self.time}
 
     @classmethod
-    def from_dict(cls, data: dict[str, bool | int]) -> TimedFeature:
-        """Convert from dict"""
-        return cls(enabled=data["enabled"], time=data["time"])
+    def from_dict(cls, data: dict[str, bool | int] | bool | None) -> TimedFeature:
+        """Convert from a timed-feature mapping, tolerating legacy boolean values."""
+        if isinstance(data, bool):
+            return cls(enabled=data, time=60)
+        if not isinstance(data, dict):
+            return cls()
+        enabled = data.get("enabled", False)
+        time_value = data.get("time", 60)
+        if not isinstance(enabled, bool):
+            enabled = bool(enabled)
+        if not isinstance(time_value, int) or isinstance(time_value, bool):
+            time_value = 60
+        return cls(enabled=enabled, time=time_value)
 
 
 class ExponentialBackoffWithReset(ExponentialBackoff):
