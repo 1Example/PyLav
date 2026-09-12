@@ -244,6 +244,30 @@ class PlayerController:
         self_deafen = await self.client.player_config_manager.get_self_deaf(channel.guild.id)
         if forced_channel_id != 0:
             act_channel = channel.guild.get_channel_or_thread(forced_channel_id)
+
+            # A forced voice channel can become stale when the channel is deleted,
+            # recreated, or is simply not present in the bot's channel cache.
+            # Previously this resulted in ``None.connect(...)`` and made the normal
+            # ``player connect`` command fail even though the requested channel was
+            # perfectly valid. Try fetching the configured channel once, then fall
+            # back to the channel the user actually requested and clear the stale
+            # forced-channel setting.
+            if act_channel is None:
+                with contextlib.suppress(discord.HTTPException, discord.NotFound, discord.Forbidden):
+                    act_channel = await channel.guild.fetch_channel(forced_channel_id)
+
+            if act_channel is None or not isinstance(
+                act_channel, (discord.VoiceChannel, discord.StageChannel)
+            ):
+                LOGGER.warning(
+                    "Forced voice channel %s for guild %s is unavailable or invalid; "
+                    "falling back to requested channel %s.",
+                    forced_channel_id,
+                    channel.guild.id,
+                    channel.id,
+                )
+                await player_config.update_forced_channel_id(forced_channel_id=0)
+                act_channel = channel
         else:
             act_channel = channel
         player: Player = await act_channel.connect(
