@@ -50,7 +50,7 @@ async def fetch_servers() -> set[str]:
         return {server["name"] for server in data}
 
 
-@CACHE(ttl=300, prefix="pick_base_url")
+@CACHE(ttl=300, prefix="pick_base_url", key="chosen")
 async def pick_base_url(session: aiohttp.ClientSession) -> URL | None:
     """Pick a base url for the RadioBrowser API."""
     servers = await fetch_servers()
@@ -64,3 +64,18 @@ async def pick_base_url(session: aiohttp.ClientSession) -> URL | None:
                     return URL(f"https://{host}")
                 LOGGER.verbose("Error interacting with %s: %s", host, response.status)
     LOGGER.error("All the following hosts for the RadioBrowser API are broken: %s", ", ".join(servers))
+
+
+async def invalidate_base_url() -> None:
+    """Forget the currently cached mirror choice.
+
+    pick_base_url() only re-checks which mirror is healthy once every 5
+    minutes (its cache TTL above). If the mirror it handed out stops
+    answering partway through that window - as opposed to being
+    unreachable from the very start, which the health-check loop above
+    already guards against - every request keeps hitting the same dead
+    host until the cache naturally expires. Call this right after a
+    request to the cached mirror fails so the next pick_base_url() call
+    actually re-probes instead of returning the same stale choice.
+    """
+    await CACHE.delete("pick_base_url:chosen")
